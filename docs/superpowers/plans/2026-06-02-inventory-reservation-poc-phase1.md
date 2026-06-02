@@ -1355,6 +1355,12 @@ git commit -m "docs: Phase 1 벤치마크 결과 + 3-way 분석"
 
 ---
 
+## 실행 중 발견된 수정 (구현 기록)
+
+- **Task 5**: MySQL 8.0은 `LIMIT ? FOR UPDATE SKIP LOCKED` 절 순서를 요구 (계획 원문은 반대였음).
+- **Task 8**: enum anonymous subclass가 접근해야 하므로 `Scenario(baseItem)` 생성자 파라미터를 `private`에서 제거.
+- **최종 게이트**: `BenchmarkCommandLineRunner`(ApplicationRunner)가 `@SpringBootTest` 컨텍스트 기동 시에도 실행되어 `context.close()`로 공유 컨텍스트를 닫는 버그 발견. 러너에 `@Profile("!test")`, 3개 IT에 `@ActiveProfiles("test")` 추가로 해결. (개별 IT가 통과했던 이유: 러너가 추가되기 전 태스크였기 때문)
+
 ## Self-Review
 
 **Spec coverage 체크 (스펙 → 태스크 매핑):**
