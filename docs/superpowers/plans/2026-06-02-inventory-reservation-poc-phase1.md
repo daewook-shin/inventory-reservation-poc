@@ -6,7 +6,7 @@
 
 **Architecture:** 단일 Spring Boot(Kotlin) 콘솔 앱. `ReservationStrategy` 인터페이스에 세 구현체를 두고, 코루틴 기반 부하 생성기가 동일 시나리오로 각 전략을 측정한다. 부하는 HTTP를 거치지 않고 서비스 계층을 직접 호출한다. 정합성은 `CorrectnessOracle`가, 성능은 per-coroutine 수집 후 병합으로 집계한다.
 
-**Tech Stack:** Kotlin, Spring Boot 3.4 (`spring-boot-starter-jdbc`), JDK 21, kotlinx-coroutines, MySQL 8.0(`FOR UPDATE SKIP LOCKED`), Redis 6(Jedis), Flyway, Gradle Kotlin DSL, JUnit5. 인프라는 docker-compose(`mysql:8.0` + `redis:6-alpine`).
+**Tech Stack:** Kotlin, Spring Boot 3.4 (`spring-boot-starter-jdbc`), JDK 17, Gradle 8.12, kotlinx-coroutines, MySQL 8.0(`FOR UPDATE SKIP LOCKED`), Redis 6(Jedis), Flyway, Gradle Kotlin DSL, JUnit5. 인프라는 docker-compose(`mysql:8.0` + `redis:6-alpine`).
 
 > **공통 전제 (전략 통합 테스트):** 전략 ①·②·③의 통합 테스트는 `docker compose up -d`로 MySQL(localhost:3306)·Redis(localhost:6379)가 떠 있어야 한다. 순수 로직 테스트(MetricsCollector, percentile, Oracle)는 인프라 불필요.
 
@@ -49,7 +49,7 @@ plugins {
 group = "poc"
 version = "0.1.0"
 
-java { toolchain { languageVersion.set(JavaLanguageVersion.of(21)) } }
+java { toolchain { languageVersion.set(JavaLanguageVersion.of(17)) } }
 
 repositories { mavenCentral() }
 
@@ -109,7 +109,7 @@ fun main(args: Array<String>) {
 - [ ] **Step 6: Build to verify scaffold compiles**
 
 Run: `./gradlew build -x test`
-Expected: `BUILD SUCCESSFUL` (gradle wrapper가 없으면 `gradle wrapper` 먼저 실행)
+Expected: `BUILD SUCCESSFUL` (Gradle 8.12 wrapper는 이미 설치됨, Java 17 사용)
 
 - [ ] **Step 7: Commit**
 
