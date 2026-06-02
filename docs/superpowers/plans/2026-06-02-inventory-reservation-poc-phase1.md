@@ -1052,7 +1052,7 @@ import poc.domain.ItemSpec
  * 각 시나리오는 아이템 레이아웃과 클라이언트의 1회 동작(action)을 정의한다.
  * action 은 reserve 결과에 따라 claim/release 를 호출해 시나리오 성격을 만든다.
  */
-enum class Scenario(private val baseItem: Long) {
+enum class Scenario(val baseItem: Long) { // 'private' 불가: enum anonymous subclass가 접근해야 함
     /** 1개 핫 아이템, 충분한 재고. reserve→즉시 release 로 재고를 순환시켜 순수 락 경합/처리량 측정. */
     HOT_SINGLE(1000) {
         override fun items() = listOf(ItemSpec(baseItem, 1, 1000))
