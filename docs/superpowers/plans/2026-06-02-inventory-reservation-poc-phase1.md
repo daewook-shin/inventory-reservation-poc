@@ -1095,7 +1095,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
-import poc.domain.AfterReserveMarker
 import poc.domain.ReservationOutcome
 import poc.domain.ReservationStrategy
 
@@ -1180,7 +1179,7 @@ class BenchmarkRunner(private val config: BenchConfig = BenchConfig()) {
 }
 ```
 
-> 주의: `import poc.domain.AfterReserveMarker` 줄은 잘못된 잔재이므로 작성하지 말 것. `AfterReserve` 는 `poc.bench` 패키지(Scenario.kt)에 있으므로 별도 import 불필요.
+> 참고: `AfterReserve`(CLAIM/RELEASE)와 `Scenario`는 같은 `poc.bench` 패키지(Scenario.kt)에 있으므로 BenchmarkRunner에서 별도 import 불필요.
 
 - [ ] **Step 6: Run full test suite**
 
@@ -1258,8 +1257,6 @@ package poc
 
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
-import org.springframework.boot.context.event.ApplicationReadyEvent
-import org.springframework.context.ApplicationListener
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.stereotype.Component
 import poc.bench.BenchConfig
