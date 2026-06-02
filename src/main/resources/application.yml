@@ -1,0 +1,17 @@
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    url: jdbc:mysql://localhost:3306/reservation_poc?useSSL=false&allowPublicKeyRetrieval=true
+    username: poc
+    password: poc
+    hikari:
+      maximum-pool-size: ${POOL_SIZE:50}
+      connection-timeout: 10000
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+redis:
+  host: localhost
+  port: 6379
