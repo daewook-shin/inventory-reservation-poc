@@ -562,7 +562,7 @@ class MySqlSkipLockedStrategy(
             val unitIds = jdbc.queryForList(
                 """SELECT id FROM reservation_units
                    WHERE shop_id=? AND item_id=? AND location_id=?
-                   FOR UPDATE SKIP LOCKED LIMIT ?""",
+                   LIMIT ? FOR UPDATE SKIP LOCKED""",
                 Long::class.java, SHOP_ID, itemId, locationId, qty,
             )
             if (unitIds.size < qty) {
