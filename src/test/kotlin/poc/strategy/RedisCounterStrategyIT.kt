@@ -8,10 +8,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.context.ActiveProfiles
 import poc.bench.CorrectnessOracle
 import poc.domain.ItemSpec
 import poc.domain.ReservationOutcome
 
+@ActiveProfiles("test")
 @SpringBootTest
 class RedisCounterStrategyIT @Autowired constructor(
     val strategy: RedisCounterStrategy,

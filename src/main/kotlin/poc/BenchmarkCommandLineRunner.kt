@@ -3,6 +3,7 @@ package poc
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.context.annotation.Profile
 import org.springframework.stereotype.Component
 import poc.bench.BenchConfig
 import poc.bench.BenchmarkRunner
@@ -11,6 +12,7 @@ import poc.bench.ResultPrinter
 import poc.bench.Scenario
 import poc.domain.ReservationStrategy
 
+@Profile("!test")
 @Component
 class BenchmarkCommandLineRunner(
     private val strategies: List<ReservationStrategy>,
