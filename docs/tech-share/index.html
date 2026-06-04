@@ -138,6 +138,7 @@
 <nav id="nav">
   <span class="brand">재고 예약 PoC</span>
   <a href="#s0">문제</a>
+  <a href="#s05">배경</a>
   <a href="#s1">3-way 셋업</a>
   <a href="#s2">① 트레이드오프</a>
   <a href="#s3">② 커넥션 병목</a>
@@ -177,9 +178,77 @@
   </div>
 </section>
 
+<!-- 0.5 배경 + As-Is/To-Be -->
+<section id="s05">
+  <div class="tag"><span class="num">1</span> 배경 & As-Is → To-Be <span class="time">~2분</span></div>
+  <h2>왜 이렇게 바꿨나 — 분리된 진실을 하나로</h2>
+
+  <p>예전엔 왜 둘로 나뉘었을까요? 예약은 결제 트래픽을 받아내는 <strong>빠른 원자 카운터</strong>가 필요해 Redis에 뒀고
+  (원문: 아이템당 <code>quantity</code> 키, 예약=<code>DECR</code>·해제=<code>INCR</code>), 재고 원장은 <strong>영구적 진실·정산</strong>이라 MySQL에 뒀습니다.
+  각자는 합리적이었어요. 문제는 <strong>claim(결제 확정)</strong>: <span class="r">Redis 예약 해제</span> + <span class="b">MySQL 원장 차감</span>을 <strong>하나로 묶어야</strong> 하는데,
+  서로 다른 시스템이라 <span class="hl">이기종 트랜잭션을 묶을 수 없습니다.</span> 둘의 커밋이 어긋나면 over/undersell.
+  → 해법은 단순합니다: <strong>예약을 MySQL로 들여와 원장과 한 트랜잭션에.</strong> 단, 그 대가로 생기는 락 경합·확장성 문제를 아래 기술들로 다스립니다.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 920 360" width="100%" height="360" role="img" aria-label="As-Is와 To-Be 아키텍처 비교">
+      <defs>
+        <marker id="aR" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#9aa7c2"/></marker>
+        <marker id="aBad" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff6b6b"/></marker>
+      </defs>
+
+      <!-- AS-IS -->
+      <rect x="8" y="8" width="440" height="344" rx="14" fill="#171e2e" stroke="#3a2530"/>
+      <text x="28" y="36" fill="#ff9b9b" font-size="15" font-weight="700">AS-IS — 예약 Redis · 원장 MySQL (분리)</text>
+      <rect x="150" y="52" width="156" height="34" rx="8" fill="#1e2740" stroke="#2a3450"/>
+      <text x="228" y="74" fill="#e8edf7" font-size="13" text-anchor="middle">결제 처리(checkout)</text>
+      <line x1="228" y1="86" x2="228" y2="110" stroke="#9aa7c2" stroke-width="1.5" marker-end="url(#aR)"/>
+      <text x="246" y="103" fill="#9aa7c2" font-size="11">reserve</text>
+      <rect x="120" y="112" width="216" height="38" rx="8" fill="#221a22" stroke="#ef5b6b"/>
+      <text x="228" y="136" fill="#ef5b6b" font-size="13" text-anchor="middle">[Redis] qty-- (예약 카운터)</text>
+      <text x="228" y="173" fill="#cdd8f2" font-size="11.5" text-anchor="middle">claim = 두 시스템 동시 갱신</text>
+      <line x1="180" y1="180" x2="180" y2="206" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#aBad)"/>
+      <line x1="276" y1="180" x2="276" y2="206" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#aBad)"/>
+      <text x="150" y="198" fill="#ff9b9b" font-size="10.5" text-anchor="middle">Redis 해제</text>
+      <text x="306" y="198" fill="#ff9b9b" font-size="10.5" text-anchor="middle">원장 차감</text>
+      <rect x="120" y="208" width="216" height="38" rx="8" fill="#1a2030" stroke="#5b8def"/>
+      <text x="228" y="232" fill="#5b8def" font-size="13" text-anchor="middle">[MySQL] inventory_ledger</text>
+      <text x="228" y="278" fill="#ffcf6b" font-size="12" text-anchor="middle">✗ 한 트랜잭션으로 못 묶음 (이기종 TX 불가)</text>
+      <text x="228" y="302" fill="#ff9b9b" font-size="13" text-anchor="middle" font-weight="700">⚠ 커밋 어긋남 → over / undersell</text>
+
+      <!-- TO-BE -->
+      <rect x="472" y="8" width="440" height="344" rx="14" fill="#171e2e" stroke="#22402f"/>
+      <text x="492" y="36" fill="#3ec98a" font-size="15" font-weight="700">TO-BE — 예약도 MySQL로 (단일 트랜잭션)</text>
+      <rect x="614" y="52" width="156" height="34" rx="8" fill="#1e2740" stroke="#2a3450"/>
+      <text x="692" y="74" fill="#e8edf7" font-size="13" text-anchor="middle">결제 처리(checkout)</text>
+      <line x1="692" y1="86" x2="692" y2="112" stroke="#9aa7c2" stroke-width="1.5" marker-end="url(#aR)"/>
+      <text x="712" y="104" fill="#9aa7c2" font-size="11">reserve + claim</text>
+      <rect x="556" y="114" width="272" height="132" rx="10" fill="#15241b" stroke="#3ec98a"/>
+      <text x="692" y="138" fill="#3ec98a" font-size="13.5" text-anchor="middle" font-weight="700">MySQL — 단일 트랜잭션 (1 TX)</text>
+      <rect x="576" y="150" width="232" height="34" rx="7" fill="#1a2030" stroke="#2a3450"/>
+      <text x="692" y="172" fill="#cfe0ff" font-size="12" text-anchor="middle">reservation_units (단위당 1 row)</text>
+      <rect x="576" y="190" width="232" height="34" rx="7" fill="#1a2030" stroke="#2a3450"/>
+      <text x="692" y="212" fill="#cfe0ff" font-size="12" text-anchor="middle">inventory_ledger</text>
+      <text x="692" y="239" fill="#9aa7c2" font-size="10.5" text-anchor="middle">SKIP LOCKED · bounded pool(1000)</text>
+      <text x="692" y="290" fill="#3ec98a" font-size="13" text-anchor="middle" font-weight="700">✓ 원자성 회복 — 어긋남 자체가 불가능</text>
+    </svg>
+    <div class="legend">핵심 차이: <strong>"진실이 두 시스템에 쪼개져 원자적으로 못 묶이던 것"(AS-IS)</strong>을
+    <strong>"예약+원장을 MySQL 한 트랜잭션으로"(TO-BE)</strong> 합친 것. 나머지 기술은 전부 이 합치기의 *대가*를 갚는 도구다.</div>
+  </div>
+
+  <h3>각 기술이 "어떤 문제를 푸는가"</h3>
+  <div class="grid cols-3">
+    <div class="card"><div class="small r">문제 · 단일 qty 행에 락이 몰림</div><h4>→ one-row-per-unit</h4><p class="small muted">재고를 N개 row로 쪼개 경합을 분산</p></div>
+    <div class="card"><div class="small r">문제 · 잠긴 행 대기로 직렬화</div><h4>→ FOR UPDATE SKIP LOCKED</h4><p class="small muted">잠긴 행은 기다리지 않고 건너뜀</p></div>
+    <div class="card"><div class="small r">문제 · 재고 많으면 테이블 비대</div><h4>→ bounded pool + replenishment</h4><p class="small muted">풀을 상한(1000)까지만, 마르면 보충</p></div>
+    <div class="card"><div class="small r">문제 · row당 락 2개(보조+클러스터)</div><h4>→ composite PK</h4><p class="small muted">락을 row당 1개로 축소</p></div>
+    <div class="card"><div class="small r">문제 · 빈 풀에서 gap-lock 데드락</div><h4>→ READ COMMITTED</h4><p class="small muted">gap lock을 안 잡아 replenishment INSERT 안 막힘</p></div>
+    <div class="card"><div class="small r">문제 · reserve/claim 순환 대기</div><h4>→ lock ordering 고정</h4><p class="small muted">항상 units 먼저 — 순환 자체를 제거</p></div>
+  </div>
+</section>
+
 <!-- 1. 3-way 셋업 -->
 <section id="s1">
-  <div class="tag"><span class="num">1</span> 3-way 셋업 <span class="time">~2분</span></div>
+  <div class="tag"><span class="num">2</span> 3-way 셋업 <span class="time">~2분</span></div>
   <h2>같은 부하로 세 가지 방식을 비교</h2>
   <p class="muted">동일한 시나리오·부하 생성기·정합성 오라클로 세 전략을 돌려, 차이가 <em>전략에서만</em> 나오게 했다.</p>
 
@@ -224,7 +293,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 
 <!-- 2. 메시지 ① 트레이드오프 -->
 <section id="s2">
-  <div class="tag"><span class="num">2</span> 핵심 메시지 ① — 3-way 트레이드오프 <span class="time">~6분</span></div>
+  <div class="tag"><span class="num">3</span> 핵심 메시지 ① — 3-way 트레이드오프 <span class="time">~6분</span></div>
   <h2>처리량은 Redis가 압도, 정합성은 분리 구조가 깨진다</h2>
 
   <p class="muted small">3 전략 × 3 시나리오, clients=200. (HOT_SINGLE: 1개 핫 아이템 / LAST_UNITS: 재고 10개에 몰림 / MIXED: 1000개 분산)</p>
@@ -256,7 +325,10 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
   </div>
   <p class="small muted">Redis는 MySQL 대비 <strong>15.3×</strong>. 그런데 — 가장 빠른 ②가 아니라 <strong>가장 위험한 게 ③</strong>이다.</p>
 
-  <h3>왜 ③만 oversell이 나는가 — Atomicity Gap</h3>
+  <h3>왜 ③만 oversell이 나는가 — Atomicity Gap (우리 ③: reserve 시점)</h3>
+  <p class="small muted">⚠️ 주의: 아래는 <strong>우리 PoC ③의 reserve 시점 check-then-act</strong>를 보여준다. 원문 Shopify의 실제 옛 버그는
+  <strong>claim 시점 dual-write</strong>(배경 섹션의 AS-IS 다이어그램)였다. 발생 지점은 다르지만 근본 원인(분리 스토어를 원자적으로 못 묶음)은 동일 —
+  우리 ③은 같은 원리를 reserve 시점으로 <em>구성한 예시</em>다.</p>
   <div class="diagram">
     <div class="tl" id="tl">
       <div class="actor"><div class="name b">Client A</div><div class="track">
@@ -294,7 +366,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 
 <!-- 3. 메시지 ② 커넥션 병목 -->
 <section id="s3">
-  <div class="tag"><span class="num">3</span> 핵심 메시지 ② — 커넥션 점유가 병목 <span class="time">~6분</span></div>
+  <div class="tag"><span class="num">4</span> 핵심 메시지 ② — 커넥션 점유가 병목 <span class="time">~6분</span></div>
   <h2>쿼리는 빠른데 처리량이 안 나온다</h2>
   <p class="muted">같은 쿼리(mysql-skip-locked / HOT_SINGLE, clients=200). 바꾼 건 <strong>커넥션 풀 크기 하나뿐.</strong></p>
 
@@ -347,7 +419,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 
 <!-- 4. gap-lock (보너스) -->
 <section id="s4">
-  <div class="tag"><span class="num">4</span> 심화 — gap-lock 데드락 <span class="skip">시간 없으면 skip</span> <span class="time">~3분</span></div>
+  <div class="tag"><span class="num">5</span> 심화 — gap-lock 데드락 <span class="skip">시간 없으면 skip</span> <span class="time">~3분</span></div>
   <h2>왜 REPEATABLE READ를 버리고 READ COMMITTED로 갔나</h2>
   <p class="muted">재고 보충(replenishment)을 붙이면 격리수준이 데드락을 만든다 — Shopify가 기본 격리수준을 바꾼 이유.</p>
 
@@ -389,7 +461,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 
 <!-- 5. 정리 -->
 <section id="s5">
-  <div class="tag"><span class="num">5</span> 정리 <span class="time">~1분</span></div>
+  <div class="tag"><span class="num">6</span> 정리 <span class="time">~1분</span></div>
   <h2>가져갈 것 세 가지</h2>
 
   <div class="grid cols-3">
