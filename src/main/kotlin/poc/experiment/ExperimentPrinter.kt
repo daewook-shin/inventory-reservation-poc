@@ -13,6 +13,18 @@ object ExperimentPrinter {
         return sb.toString()
     }
 
+    fun e1DemoMarkdown(rrStats: DeadlockStats, rcStats: DeadlockStats): String {
+        val sb = StringBuilder()
+        sb.appendLine("### E1b — gap-lock 데드락 최소 재현 (배리어 동기화)")
+        sb.appendLine("| isolation | deadlocks(1213) | lockWaitTimeouts(1205) | otherErrors | successes |")
+        sb.appendLine("|---|---|---|---|---|")
+        fun row(name: String, s: DeadlockStats) =
+            "| $name | ${s.deadlocks.get()} | ${s.lockWaitTimeouts.get()} | ${s.otherErrors.get()} | ${s.successes.get()} |"
+        sb.appendLine(row("REPEATABLE_READ", rrStats))
+        sb.appendLine(row("READ_COMMITTED", rcStats))
+        return sb.toString()
+    }
+
     fun e2Markdown(r: E2Report): String {
         val sb = StringBuilder()
         sb.appendLine("### E2 — Bounded pool 정합성")

@@ -1,5 +1,8 @@
 package poc.experiment
 
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -10,8 +13,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.sql.SQLException
 import org.springframework.dao.DataAccessException
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
+import poc.domain.SHOP_ID
 
 data class E2Report(
     val total: Long,
@@ -24,12 +29,14 @@ data class E2Report(
 
 private const val ITEM = 9000L
 private const val LOC = 1L
+private const val DEMO_ITEM = 9100L
 
 @Component
 class ExperimentRunner(
     private val tm: PlatformTransactionManager,
     private val dao: ReservationDao,
     private val replenishment: ReplenishmentJob,
+    private val jdbc: JdbcTemplate,
 ) {
     /** DataAccessException을 InnoDB 에러코드로 분류해 stats에 누적. */
     fun classify(e: Throwable, stats: DeadlockStats) {
@@ -93,7 +100,7 @@ class ExperimentRunner(
      * 충돌해 데드락/타임아웃이 발생할 수 있다. READ COMMITTED 는 gap lock이 없어 깨끗하다.
      */
     fun runE1(isolation: Int, clients: Int, rounds: Int): DeadlockStats = runBlocking {
-        val poolCap = 50
+        val poolCap = 1000
         dao.seed(ITEM, LOC, ledgerTotal = 3000, poolCap = poolCap)
         val stats = DeadlockStats()
         val reserveTx = Tx.template(tm, isolation)
@@ -129,5 +136,46 @@ class ExperimentRunner(
         }
         replenisher.cancelAndJoin()
         stats
+    }
+
+    /**
+     * gap-lock 데드락 최소 재현. 두 트랜잭션이 같은 범위에 gap lock을 잡은 뒤 동시에 INSERT.
+     * REPEATABLE READ: gap lock 보유 → insert-intention 순환 대기 → 데드락(1213).
+     * READ COMMITTED: gap lock 없음 → 양쪽 INSERT 성공.
+     */
+    fun runGapLockDemo(isolation: Int, rounds: Int = 20): DeadlockStats {
+        val stats = DeadlockStats()
+        val tx = Tx.template(tm, isolation)
+        repeat(rounds) {
+            seedDemoRows()
+            val barrier = CyclicBarrier(2)
+            val threads = (0..1).map { k ->
+                thread {
+                    try {
+                        tx.executeWithoutResult {
+                            jdbc.queryForList(
+                                "SELECT id FROM reservation_units WHERE shop_id=? AND item_id=? AND location_id=? AND id > 0 FOR UPDATE",
+                                Long::class.java, SHOP_ID, DEMO_ITEM, LOC,
+                            )
+                            try { barrier.await(10, TimeUnit.SECONDS) } catch (_: Exception) { /* 한쪽이 먼저 실패해도 INSERT 진행 */ }
+                            jdbc.update(
+                                "INSERT INTO reservation_units(shop_id,item_id,location_id,id) VALUES (?,?,?,?)",
+                                SHOP_ID, DEMO_ITEM, LOC, 1000L + k,
+                            )
+                        }
+                        stats.successes.incrementAndGet()
+                    } catch (e: Throwable) {
+                        classify(e, stats)
+                    }
+                }
+            }
+            threads.forEach { it.join() }
+        }
+        return stats
+    }
+
+    private fun seedDemoRows() {
+        // 빈 테이블로 세팅: gap lock만 잡히고 next-key lock이 없어야 두 SELECT가 동시에 진행된다.
+        jdbc.update("DELETE FROM reservation_units WHERE shop_id=? AND item_id=? AND location_id=?", SHOP_ID, DEMO_ITEM, LOC)
     }
 }

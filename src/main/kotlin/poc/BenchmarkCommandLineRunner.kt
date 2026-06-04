@@ -60,6 +60,10 @@ class BenchmarkCommandLineRunner(
             println(">>> E1 격리수준 데드락 (READ_COMMITTED) ...")
             val rc = experimentRunner.runE1(Tx.READ_COMMITTED, clients = clients, rounds = 10)
             println("\n${ExperimentPrinter.e1Markdown(rrStats = rr, rcStats = rc)}")
+            println(">>> E1b gap-lock 데드락 최소 재현 ...")
+            val demoRr = experimentRunner.runGapLockDemo(Tx.REPEATABLE_READ)
+            val demoRc = experimentRunner.runGapLockDemo(Tx.READ_COMMITTED)
+            println("\n${ExperimentPrinter.e1DemoMarkdown(demoRr, demoRc)}")
         }
         if (which == "E2" || which == "all") {
             println(">>> E2 bounded pool 정합성 ...")
