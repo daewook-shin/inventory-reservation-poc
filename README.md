@@ -39,11 +39,12 @@ POOL_SIZE=50 ./gradlew bootRun --args='--clients=200 --strategy=mysql-skip-locke
 
 ## 문서
 
+- **Tech-share 발표 페이지**(자기완결 정적 HTML): [docs/tech-share/index.html](docs/tech-share/index.html) — 브라우저로 열기
 - 설계 스펙: [docs/superpowers/specs/](docs/superpowers/specs/)
 - 구현 계획: [docs/superpowers/plans/](docs/superpowers/plans/)
-- **벤치마크 결과·분석**: [docs/results/2026-06-02-phase1-results.md](docs/results/2026-06-02-phase1-results.md)
+- **벤치마크 결과·분석**: [Phase 1](docs/results/2026-06-02-phase1-results.md) · [Phase 2](docs/results/2026-06-04-phase2-results.md)
 
 ## 범위
 
-Phase 1(현재): 3-way 비교 + 부하 하니스 + 정합성 오라클 + 커넥션 풀 노브.
-Phase 2(미구현): replenishment 잡 → READ COMMITTED / gap-lock / lock-ordering 데드락 재현.
+- **Phase 1**: 3-way 비교 + 부하 하니스 + 정합성 오라클 + 커넥션 풀 노브.
+- **Phase 2**: bounded pool replenishment + 격리수준 gap-lock 데드락(E1b 결정적 재현) + bounded pool 정합성(E2). (E3 lock-ordering은 미구현.)
