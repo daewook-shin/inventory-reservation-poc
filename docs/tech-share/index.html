@@ -427,8 +427,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 <section id="s3">
   <div class="tag"><span class="num">4</span> 핵심 메시지 ② — 커넥션 점유가 병목 <span class="time">~6분</span></div>
   <h2>쿼리는 빠른데 처리량이 안 나온다</h2>
-  <p class="muted">①(MySQL)을 골라 <strong>정합성</strong>은 풀었다. 하지만 <strong>correctness ≠ throughput</strong> — 이제 그 ① 안에서 처리량을 갉아먹는 병목을 잡을 차례다.
-  Shopify가 가장 먼저 부딪힌 병목은 예약 쿼리 속도가 아니라 <strong>커넥션 점유</strong>였다.</p>
+  <p class="muted">①(MySQL)을 골라 <strong>정합성</strong>은 풀었다. 하지만 <strong>correctness ≠ throughput</strong> — 이제 그 ① 안에서 처리량을 갉아먹는 병목을 잡을 차례다.</p>
   <p class="muted">같은 쿼리(mysql-skip-locked / HOT_SINGLE, clients=200). 바꾼 건 <strong>커넥션 풀 크기 하나뿐.</strong></p>
 
   <div class="kpi">
@@ -469,7 +468,8 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
   </div>
 
   <blockquote>"The query is fast; it's the wait for a connection that kills you."</blockquote>
-  <p>Shopify의 진짜 발견도 이거였다 — 병목은 예약 쿼리가 아니라, <strong>체크아웃 경로의 다른 코드가 커넥션을 오래 물고 있던 것.</strong>
+  <p>Shopify의 진짜 발견도 이거였다 — <strong>쿼리·락은 몇 주를 깎았지만</strong>(composite PK·격리수준 등 저수준 튜닝, 뒤 <strong>'구현 디테일'</strong>), 정작 천장은 예약 쿼리가 아니라
+  <strong>체크아웃 경로의 다른 코드가 — 자기들이 보지도 않던 코드가 — 커넥션을 오래 물고 있던 것.</strong>
   per-caller로 커넥션 점유를 계측해 찾아냈고, 정리 후 primary read 50%·트랜잭션 33% 감소.</p>
 
   <div class="callout ok">
@@ -549,6 +549,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
       <p class="small muted">반대 순서로 잠그면 <strong>순환 대기</strong>; 순서를 고정(units 먼저)해 제거.</p>
     </div>
   </div>
+  <p class="small muted">※ 원문엔 멀티아이템 카트의 라운드트립을 줄이는 <strong>batching(UNION ALL)</strong>도 4번째 결정으로 나오지만, 우리 PoC는 단일 아이템 부하만 다뤄 <strong>범위 밖</strong>(미구현)이라 카드로 넣지 않았다.</p>
   <div class="legend">특히 <strong>READ COMMITTED</strong>는 앞 bounded pool의 <strong>replenishment INSERT</strong>가 gap lock에 막히던 문제를 푼 것 — 바로 다음 섹션에서 실제로 재현한다.</div>
 </section>
 
