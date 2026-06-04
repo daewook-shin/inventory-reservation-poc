@@ -85,4 +85,49 @@ class ExperimentRunner(
             finalSnapshot = snap,
         )
     }
+
+    /**
+     * E1: total > poolCap 으로 replenishment INSERT가 계속 일어나게 하고,
+     * 주어진 격리수준으로 reserve(SKIP LOCKED SELECT + DELETE + INSERT)를 동시 구동.
+     * REPEATABLE READ 에서는 SKIP LOCKED select의 supremum gap lock이 replenishment INSERT와
+     * 충돌해 데드락/타임아웃이 발생할 수 있다. READ COMMITTED 는 gap lock이 없어 깨끗하다.
+     */
+    fun runE1(isolation: Int, clients: Int, rounds: Int): DeadlockStats = runBlocking {
+        val poolCap = 1000
+        dao.seed(ITEM, LOC, ledgerTotal = 3000, poolCap = poolCap)
+        val stats = DeadlockStats()
+        val reserveTx = Tx.template(tm, isolation)
+        val replenishTx = Tx.template(tm, Tx.READ_COMMITTED) // 보충은 RC 고정; reserve 격리수준이 변수
+
+        val replenisher = launch(Dispatchers.IO) {
+            while (isActive) {
+                try {
+                    replenishment.replenishOnce(replenishTx, ITEM, LOC, poolCap)
+                } catch (e: Exception) {
+                    classify(e, stats) // 보충 INSERT가 gap lock에 막혀 실패한 것도 충돌로 집계
+                }
+                delay(2)
+            }
+        }
+
+        repeat(rounds) {
+            (0 until clients).map {
+                async(Dispatchers.IO) {
+                    try {
+                        val rid = dao.reserve(reserveTx, ITEM, LOC, 1)
+                        if (rid != null) {
+                            stats.successes.incrementAndGet()
+                            dao.claim(reserveTx, rid) // 풀을 계속 비워 replenishment가 INSERT를 반복하게 함
+                        } else {
+                            stats.soldOut.incrementAndGet()
+                        }
+                    } catch (e: Exception) {
+                        classify(e, stats)
+                    }
+                }
+            }.awaitAll()
+        }
+        replenisher.cancelAndJoin()
+        stats
+    }
 }
