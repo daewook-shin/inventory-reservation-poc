@@ -145,6 +145,7 @@
   <a href="#s1">3-way 셋업</a>
   <a href="#s2">① 트레이드오프</a>
   <a href="#s3">② 커넥션 병목</a>
+  <a href="#s35">구현 디테일</a>
   <a href="#s4">gap-lock</a>
   <a href="#s5">정리</a>
 </nav>
@@ -190,7 +191,7 @@
   (원문: 아이템당 <code>quantity</code> 키, 예약=<code>DECR</code>·해제=<code>INCR</code>), 재고 원장은 <strong>영구적 진실·정산</strong>이라 MySQL에 뒀습니다.
   각자는 합리적이었어요. 문제는 <strong>claim(결제 확정)</strong>: <span class="r">Redis 예약 해제</span> + <span class="b">MySQL 원장 차감</span>을 <strong>하나로 묶어야</strong> 하는데,
   서로 다른 시스템이라 <span class="hl">이기종 트랜잭션을 묶을 수 없습니다.</span> 둘의 커밋이 어긋나면 over/undersell.
-  → 해법은 단순합니다: <strong>예약을 MySQL로 들여와 원장과 한 트랜잭션에.</strong> 단, 그 대가로 생기는 락 경합·확장성 문제를 아래 기술들로 다스립니다.</p>
+  → 해법은 단순합니다: <strong>예약을 MySQL로 들여와 원장과 한 트랜잭션에.</strong> 단, 그 대가로 생기는 락 경합·확장성 문제를 <strong>아래 '설계 3가지'</strong>로 풉니다. (구현하다 부딪힌 InnoDB 저수준 문제 3가지는 뒤 <strong>'구현 디테일'</strong> 섹션에서 — 원문도 '설계'와 'InnoDB 이슈'를 분리해 다룹니다.)</p>
 
   <div class="diagram">
     <svg viewBox="0 0 920 360" width="100%" height="360" role="img" aria-label="As-Is와 To-Be 아키텍처 비교">
@@ -235,11 +236,12 @@
       <text x="692" y="290" fill="#3ec98a" font-size="13" text-anchor="middle" font-weight="700">✓ 원자성 회복 — 어긋남 자체가 불가능</text>
     </svg>
     <div class="legend">핵심 차이: <strong>"진실이 두 시스템에 쪼개져 원자적으로 못 묶이던 것"(AS-IS)</strong>을
-    <strong>"예약+원장을 MySQL 한 트랜잭션으로"(TO-BE)</strong> 합친 것. 나머지 기술은 전부 이 합치기의 *대가*를 갚는 도구다.</div>
+    <strong>"예약+원장을 MySQL 한 트랜잭션으로"(TO-BE)</strong> 합친 것. 그 합치기의 *대가*(락 경합·gap lock·데드락)를 갚는 게 <strong>설계 3가지 + 뒤 '구현 디테일' 3가지</strong>다.</div>
   </div>
 
-  <h3>각 기술이 "어떻게 동작하는가"</h3>
-  <div class="grid cols-2">
+  <h3>TO-BE를 이루는 설계 3가지 — 어떻게 동작하나</h3>
+  <p class="small muted">아래 3가지가 곧 위 To-Be 박스의 내용. (합치기의 *대가*를 갚는 InnoDB 디테일 3가지는 뒤 '구현 디테일' 섹션에서.)</p>
+  <div class="grid cols-3">
 
     <div class="card">
       <h4>→ one-row-per-unit</h4>
@@ -298,70 +300,7 @@
         <path d="M158,66 Q96,116 70,100" fill="none" stroke="#3ec98a" stroke-width="1.5" stroke-dasharray="4 3"/>
         <text x="150" y="114" fill="#9aa7c2" font-size="10">마르면 원장에서 보충 ↺</text>
       </svg></div>
-      <p class="small muted">전 재고를 행으로 안 만들고 <strong>1000행만</strong>; 줄면 원장에서 되채움.</p>
-    </div>
-
-    <div class="card">
-      <h4>→ composite PK</h4>
-      <div class="mini"><svg viewBox="0 0 320 110" role="img" aria-label="composite PK 동작">
-        <line x1="160" y1="6" x2="160" y2="104" stroke="#2a3450" stroke-dasharray="3 3"/>
-        <text x="12" y="16" fill="#ff9b9b" font-size="11" font-weight="700">auto-inc PK</text>
-        <text x="14" y="54" fill="#cdd8f2" font-size="11">reserve →</text>
-        <text x="92" y="58" font-size="15">🔒🔒</text>
-        <text x="58" y="94" fill="#ef5b6b" font-size="18" font-weight="700">×2</text>
-        <text x="14" y="103" fill="#ff9b9b" font-size="9.5">보조 idx + 클러스터드</text>
-        <text x="176" y="16" fill="#3ec98a" font-size="11" font-weight="700">복합 PK</text>
-        <text x="180" y="54" fill="#cdd8f2" font-size="11">reserve →</text>
-        <text x="258" y="58" font-size="15">🔒</text>
-        <text x="230" y="94" fill="#3ec98a" font-size="18" font-weight="700">×1</text>
-        <text x="176" y="103" fill="#3ec98a" font-size="9.5">row당 1잠금</text>
-      </svg></div>
-      <p class="small muted">auto-inc는 보조+클러스터 <strong>2잠금</strong> → 복합 PK로 <strong>row당 1잠금</strong>.</p>
-    </div>
-
-    <div class="card">
-      <h4>→ READ COMMITTED</h4>
-      <div class="mini"><svg viewBox="0 0 320 120" role="img" aria-label="격리수준과 gap lock">
-        <text x="10" y="22" fill="#ff9b9b" font-size="11" font-weight="700">RR</text>
-        <rect x="40" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <rect x="62" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <rect x="84" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <rect x="106" y="8" width="150" height="22" rx="4" fill="rgba(255,107,107,.16)" stroke="#ef5b6b" stroke-dasharray="4 3"/>
-        <text x="181" y="23" fill="#ff9b9b" font-size="10" text-anchor="middle">gap lock → ∞</text>
-        <text x="262" y="24" fill="#ef5b6b" font-size="11" font-weight="700">INSERT ✗</text>
-        <text x="10" y="80" fill="#3ec98a" font-size="11" font-weight="700">RC</text>
-        <rect x="40" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <rect x="62" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <rect x="84" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
-        <text x="116" y="82" fill="#9aa7c2" font-size="10">gap lock 없음</text>
-        <text x="250" y="82" fill="#3ec98a" font-size="11" font-weight="700">INSERT ✓</text>
-        <text x="10" y="110" fill="#9aa7c2" font-size="9.5">RR은 ∞까지 빈틈을 잠가 보충 INSERT를 막는다 → RC로 해소</text>
-      </svg></div>
-      <p class="small muted">RR은 <strong>gap lock</strong>으로 빈틈을 잠가 INSERT를 막음; RC는 안 잡아 통과.</p>
-    </div>
-
-    <div class="card">
-      <h4>→ lock ordering 고정</h4>
-      <div class="mini"><svg viewBox="0 0 320 120" role="img" aria-label="lock ordering 동작">
-        <line x1="160" y1="6" x2="160" y2="114" stroke="#2a3450" stroke-dasharray="3 3"/>
-        <text x="12" y="16" fill="#ff9b9b" font-size="10.5" font-weight="700">반대 순서 → 순환 ✗</text>
-        <rect x="30" y="28" width="64" height="24" rx="5" fill="#1a2030" stroke="#5b8def"/>
-        <text x="62" y="44" fill="#cfe0ff" font-size="11" text-anchor="middle">units</text>
-        <rect x="30" y="80" width="64" height="24" rx="5" fill="#1a2030" stroke="#b07cff"/>
-        <text x="62" y="96" fill="#cdb0ff" font-size="11" text-anchor="middle">reserved</text>
-        <line x1="46" y1="52" x2="46" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="22" y="69" fill="#3ec98a" font-size="9">A↓</text>
-        <line x1="80" y1="80" x2="80" y2="52" stroke="#ff6b6b" stroke-width="1.5"/><text x="84" y="69" fill="#ff6b6b" font-size="9">B↑</text>
-        <text x="62" y="116" fill="#ff9b9b" font-size="9" text-anchor="middle">서로 기다림 = 데드락</text>
-        <text x="176" y="16" fill="#3ec98a" font-size="10.5" font-weight="700">고정 순서 → ✓</text>
-        <rect x="206" y="28" width="64" height="24" rx="5" fill="#1a2030" stroke="#5b8def"/>
-        <text x="238" y="44" fill="#cfe0ff" font-size="11" text-anchor="middle">units</text>
-        <rect x="206" y="80" width="64" height="24" rx="5" fill="#1a2030" stroke="#b07cff"/>
-        <text x="238" y="96" fill="#cdb0ff" font-size="11" text-anchor="middle">reserved</text>
-        <line x1="222" y1="52" x2="222" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="200" y="69" fill="#3ec98a" font-size="9">A↓</text>
-        <line x1="254" y1="52" x2="254" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="258" y="69" fill="#3ec98a" font-size="9">B↓</text>
-        <text x="238" y="116" fill="#3ec98a" font-size="9" text-anchor="middle">둘 다 units 먼저</text>
-      </svg></div>
-      <p class="small muted">반대 순서로 잠그면 <strong>순환 대기</strong>; 순서를 고정(units 먼저)해 제거.</p>
+      <p class="small muted">전 재고를 행으로 안 만들고 <strong>1000행만</strong>; 줄면 원장에서 되채움. <em>(이 보충 INSERT가 뒤 '구현 디테일'의 READ COMMITTED 문제의 원인.)</em></p>
     </div>
 
   </div>
@@ -371,7 +310,8 @@
 <section id="s1">
   <div class="tag"><span class="num">2</span> 3-way 셋업 <span class="time">~2분</span></div>
   <h2>같은 부하로 세 가지 방식을 비교</h2>
-  <p class="muted">동일한 시나리오·부하 생성기·정합성 오라클로 세 전략을 돌려, 차이가 <em>전략에서만</em> 나오게 했다.</p>
+  <p class="muted">Shopify의 답(TO-BE = ① MySQL)을 그냥 믿지 말고, <strong>직접 ②③와 재현·측정해 확인</strong>해보자.
+  동일한 시나리오·부하 생성기·정합성 오라클로 세 전략을 돌려, 차이가 <em>전략에서만</em> 나오게 했다.</p>
 
   <div class="grid cols-3" style="margin-top:18px">
     <div class="card mysql">
@@ -538,11 +478,85 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
   </div>
 </section>
 
+<!-- 3.5 InnoDB 구현 디테일 -->
+<section id="s35">
+  <div class="tag"><span class="num">5</span> 구현 디테일 — InnoDB <span class="skip">심화 · skip 가능</span> <span class="time">~3분</span></div>
+  <h2>설계를 실제로 굴리며 부딪힌 저수준 문제 3가지</h2>
+  <p class="muted">앞의 설계(one-row · SKIP LOCKED · bounded pool)를 MySQL에서 돌리다 만난 <strong>InnoDB 레벨 이슈</strong>들 —
+  Shopify 글도 'the new design'과 별개로 "we hit and fixed"로 따로 다룬다. (① MySQL 전략에만 해당)</p>
+
+  <div class="grid cols-3">
+    <div class="card">
+      <h4>→ composite PK</h4>
+      <div class="mini"><svg viewBox="0 0 320 110" role="img" aria-label="composite PK 동작">
+        <line x1="160" y1="6" x2="160" y2="104" stroke="#2a3450" stroke-dasharray="3 3"/>
+        <text x="12" y="16" fill="#ff9b9b" font-size="11" font-weight="700">auto-inc PK</text>
+        <text x="14" y="54" fill="#cdd8f2" font-size="11">reserve →</text>
+        <text x="92" y="58" font-size="15">🔒🔒</text>
+        <text x="58" y="94" fill="#ef5b6b" font-size="18" font-weight="700">×2</text>
+        <text x="14" y="103" fill="#ff9b9b" font-size="9.5">보조 idx + 클러스터드</text>
+        <text x="176" y="16" fill="#3ec98a" font-size="11" font-weight="700">복합 PK</text>
+        <text x="180" y="54" fill="#cdd8f2" font-size="11">reserve →</text>
+        <text x="258" y="58" font-size="15">🔒</text>
+        <text x="230" y="94" fill="#3ec98a" font-size="18" font-weight="700">×1</text>
+        <text x="176" y="103" fill="#3ec98a" font-size="9.5">row당 1잠금</text>
+      </svg></div>
+      <p class="small muted">auto-inc는 보조+클러스터 <strong>2잠금</strong> → 복합 PK로 <strong>row당 1잠금</strong>.</p>
+    </div>
+
+    <div class="card">
+      <h4>→ READ COMMITTED</h4>
+      <div class="mini"><svg viewBox="0 0 320 120" role="img" aria-label="격리수준과 gap lock">
+        <text x="10" y="22" fill="#ff9b9b" font-size="11" font-weight="700">RR</text>
+        <rect x="40" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="62" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="84" y="10" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="106" y="8" width="150" height="22" rx="4" fill="rgba(255,107,107,.16)" stroke="#ef5b6b" stroke-dasharray="4 3"/>
+        <text x="181" y="23" fill="#ff9b9b" font-size="10" text-anchor="middle">gap lock → ∞</text>
+        <text x="262" y="24" fill="#ef5b6b" font-size="11" font-weight="700">INSERT ✗</text>
+        <text x="10" y="80" fill="#3ec98a" font-size="11" font-weight="700">RC</text>
+        <rect x="40" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="62" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="84" y="68" width="20" height="18" rx="3" fill="#1a2030" stroke="#2a3450"/>
+        <text x="116" y="82" fill="#9aa7c2" font-size="10">gap lock 없음</text>
+        <text x="250" y="82" fill="#3ec98a" font-size="11" font-weight="700">INSERT ✓</text>
+        <text x="10" y="110" fill="#9aa7c2" font-size="9.5">RR은 ∞까지 빈틈을 잠가 보충 INSERT를 막는다 → RC로 해소</text>
+      </svg></div>
+      <p class="small muted">RR은 <strong>gap lock</strong>으로 빈틈을 잠가 INSERT를 막음; RC는 안 잡아 통과.</p>
+    </div>
+
+    <div class="card">
+      <h4>→ lock ordering 고정</h4>
+      <div class="mini"><svg viewBox="0 0 320 120" role="img" aria-label="lock ordering 동작">
+        <line x1="160" y1="6" x2="160" y2="114" stroke="#2a3450" stroke-dasharray="3 3"/>
+        <text x="12" y="16" fill="#ff9b9b" font-size="10.5" font-weight="700">반대 순서 → 순환 ✗</text>
+        <rect x="30" y="28" width="64" height="24" rx="5" fill="#1a2030" stroke="#5b8def"/>
+        <text x="62" y="44" fill="#cfe0ff" font-size="11" text-anchor="middle">units</text>
+        <rect x="30" y="80" width="64" height="24" rx="5" fill="#1a2030" stroke="#b07cff"/>
+        <text x="62" y="96" fill="#cdb0ff" font-size="11" text-anchor="middle">reserved</text>
+        <line x1="46" y1="52" x2="46" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="22" y="69" fill="#3ec98a" font-size="9">A↓</text>
+        <line x1="80" y1="80" x2="80" y2="52" stroke="#ff6b6b" stroke-width="1.5"/><text x="84" y="69" fill="#ff6b6b" font-size="9">B↑</text>
+        <text x="62" y="116" fill="#ff9b9b" font-size="9" text-anchor="middle">서로 기다림 = 데드락</text>
+        <text x="176" y="16" fill="#3ec98a" font-size="10.5" font-weight="700">고정 순서 → ✓</text>
+        <rect x="206" y="28" width="64" height="24" rx="5" fill="#1a2030" stroke="#5b8def"/>
+        <text x="238" y="44" fill="#cfe0ff" font-size="11" text-anchor="middle">units</text>
+        <rect x="206" y="80" width="64" height="24" rx="5" fill="#1a2030" stroke="#b07cff"/>
+        <text x="238" y="96" fill="#cdb0ff" font-size="11" text-anchor="middle">reserved</text>
+        <line x1="222" y1="52" x2="222" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="200" y="69" fill="#3ec98a" font-size="9">A↓</text>
+        <line x1="254" y1="52" x2="254" y2="80" stroke="#3ec98a" stroke-width="1.5"/><text x="258" y="69" fill="#3ec98a" font-size="9">B↓</text>
+        <text x="238" y="116" fill="#3ec98a" font-size="9" text-anchor="middle">둘 다 units 먼저</text>
+      </svg></div>
+      <p class="small muted">반대 순서로 잠그면 <strong>순환 대기</strong>; 순서를 고정(units 먼저)해 제거.</p>
+    </div>
+  </div>
+  <div class="legend">특히 <strong>READ COMMITTED</strong>는 앞 bounded pool의 <strong>replenishment INSERT</strong>가 gap lock에 막히던 문제를 푼 것 — 바로 다음 섹션에서 실제로 재현한다.</div>
+</section>
+
 <!-- 4. gap-lock (보너스) -->
 <section id="s4">
-  <div class="tag"><span class="num">5</span> 심화 — gap-lock 데드락 <span class="skip">시간 없으면 skip</span> <span class="time">~3분</span></div>
+  <div class="tag"><span class="num">6</span> 심화 — gap-lock 데드락 (RC를 실측으로) <span class="skip">skip 가능</span> <span class="time">~3분</span></div>
   <h2>왜 REPEATABLE READ를 버리고 READ COMMITTED로 갔나</h2>
-  <p class="muted">재고 보충(replenishment)을 붙이면 격리수준이 데드락을 만든다 — Shopify가 기본 격리수준을 바꾼 이유.</p>
+  <p class="muted">앞 '구현 디테일'의 <strong>READ COMMITTED</strong> 카드를 실제로 재현한다 — 재고 보충(replenishment)을 붙이면 격리수준이 데드락을 만든다(Shopify가 기본 격리수준을 바꾼 이유).</p>
 
   <table style="max-width:680px">
     <thead><tr><th>isolation</th><th>deadlocks(1213)</th><th>성공</th><th>비고</th></tr></thead>
@@ -582,7 +596,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 
 <!-- 5. 정리 -->
 <section id="s5">
-  <div class="tag"><span class="num">6</span> 정리 <span class="time">~1분</span></div>
+  <div class="tag"><span class="num">7</span> 정리 <span class="time">~1분</span></div>
   <h2>가져갈 것 세 가지</h2>
 
   <div class="grid cols-3">
