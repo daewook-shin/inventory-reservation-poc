@@ -93,7 +93,7 @@ class ExperimentRunner(
      * 충돌해 데드락/타임아웃이 발생할 수 있다. READ COMMITTED 는 gap lock이 없어 깨끗하다.
      */
     fun runE1(isolation: Int, clients: Int, rounds: Int): DeadlockStats = runBlocking {
-        val poolCap = 1000
+        val poolCap = 50
         dao.seed(ITEM, LOC, ledgerTotal = 3000, poolCap = poolCap)
         val stats = DeadlockStats()
         val reserveTx = Tx.template(tm, isolation)
