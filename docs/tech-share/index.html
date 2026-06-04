@@ -311,7 +311,8 @@
   <div class="tag"><span class="num">2</span> 3-way 셋업 <span class="time">~2분</span></div>
   <h2>같은 부하로 세 가지 방식을 비교</h2>
   <p class="muted">Shopify의 답(TO-BE = ① MySQL)을 그냥 믿지 말고, <strong>직접 ②③와 재현·측정해 확인</strong>해보자.
-  동일한 시나리오·부하 생성기·정합성 오라클로 세 전략을 돌려, 차이가 <em>전략에서만</em> 나오게 했다.</p>
+  동일한 시나리오·부하 생성기·정합성 오라클로 세 전략을 돌려, 차이가 <em>전략에서만</em> 나오게 했다.
+  <br><span class="small">※ 헷갈리지 말 것: 앞 '설계 3가지'(one-row·SKIP LOCKED·bounded pool)는 모두 <strong class="b">①</strong> <strong>안의 구성요소</strong>다. 여기 ①②③는 그 ①과 견줄 <strong>다른 전략</strong>(비교 대상).</span></p>
 
   <div class="grid cols-3" style="margin-top:18px">
     <div class="card mysql">
@@ -372,8 +373,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
       <tr class="split"><td class="l">redis-ledger-split</td><td>MIXED</td><td>4,635</td><td>7,908</td><td>1000</td><td class="cell-ok">0</td><td class="cell-ok">true</td></tr>
     </tbody>
   </table>
-  <p class="small muted">* LAST_UNITS의 throughput은 재고 10개 소진 후 나머지 라운드가 전부 sold-out이라 "워크로드 완주 시간"에 가깝다 —
-  이 시나리오의 의미는 <strong>정합성(oversell)</strong>이지 처리량이 아니다.</p>
+  <p class="small muted">* sold-out 후 남은 라운드 전체의 "워크로드 완주 시간"에 가까운 값(처리량 아님). LAST_UNITS에서 봐야 할 건 처리량이 아니라 <strong>정합성(oversell)</strong>이다.</p>
 
   <h3>처리량 (HOT_SINGLE, req/s)</h3>
   <div class="bars" id="bars">
@@ -387,9 +387,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
   <p class="small muted">Redis는 MySQL 대비 <strong>15.3×</strong>. 그런데 — 가장 빠른 ②가 아니라 <strong>가장 위험한 게 ③</strong>이다.</p>
 
   <h3>왜 ③만 oversell이 나는가 — Atomicity Gap (우리 ③: reserve 시점)</h3>
-  <p class="small muted">⚠️ 주의: 아래는 <strong>우리 PoC ③의 reserve 시점 check-then-act</strong>를 보여준다. 원문 Shopify의 실제 옛 버그는
-  <strong>claim 시점 dual-write</strong>(배경 섹션의 AS-IS 다이어그램)였다. 발생 지점은 다르지만 근본 원인(분리 스토어를 원자적으로 못 묶음)은 동일 —
-  우리 ③은 같은 원리를 reserve 시점으로 <em>구성한 예시</em>다.</p>
+  <p class="small muted">⚠️ 아래는 <strong>우리 ③의 reserve 시점</strong> check-then-act 예시. (원문 Shopify의 실제 버그는 <strong>claim 시점 dual-write</strong> — 배경 AS-IS 다이어그램. 발생 지점만 다르고 근본 원인은 동일.)</p>
   <div class="diagram">
     <div class="tl" id="tl">
       <div class="actor"><div class="name b">Client A</div><div class="track">
@@ -429,6 +427,8 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
 <section id="s3">
   <div class="tag"><span class="num">4</span> 핵심 메시지 ② — 커넥션 점유가 병목 <span class="time">~6분</span></div>
   <h2>쿼리는 빠른데 처리량이 안 나온다</h2>
+  <p class="muted">①(MySQL)을 골라 <strong>정합성</strong>은 풀었다. 하지만 <strong>correctness ≠ throughput</strong> — 이제 그 ① 안에서 처리량을 갉아먹는 병목을 잡을 차례다.
+  Shopify가 가장 먼저 부딪힌 병목은 예약 쿼리 속도가 아니라 <strong>커넥션 점유</strong>였다.</p>
   <p class="muted">같은 쿼리(mysql-skip-locked / HOT_SINGLE, clients=200). 바꾼 건 <strong>커넥션 풀 크기 하나뿐.</strong></p>
 
   <div class="kpi">
@@ -501,7 +501,7 @@ reserved = <span class="r">GET reserved:{item}</span>                   <span cl
         <text x="230" y="94" fill="#3ec98a" font-size="18" font-weight="700">×1</text>
         <text x="176" y="103" fill="#3ec98a" font-size="9.5">row당 1잠금</text>
       </svg></div>
-      <p class="small muted">auto-inc는 보조+클러스터 <strong>2잠금</strong> → 복합 PK로 <strong>row당 1잠금</strong>.</p>
+      <p class="small muted">보조 인덱스로 행을 찾으면 InnoDB가 <strong>보조 레코드 + 클러스터드(PK) 레코드</strong>를 둘 다 잠근다(2잠금) → 조회 컬럼을 복합 PK 앞자리에 두면 클러스터드에서 바로 찾아 <strong>row당 1잠금</strong>.</p>
     </div>
 
     <div class="card">
