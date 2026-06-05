@@ -39,7 +39,9 @@ POOL_SIZE=50 ./gradlew bootRun --args='--clients=200 --strategy=mysql-skip-locke
 
 ## 문서
 
-- **Tech-share 발표 페이지**(자기완결 정적 HTML): [docs/tech-share/index.html](docs/tech-share/index.html) — 브라우저로 열기
+- **Tech-share 발표 페이지**(자기완결 정적 HTML):
+  - [docs/tech-share/skip-locked.html](docs/tech-share/skip-locked.html) — **`FOR UPDATE SKIP LOCKED` 집중**(배경·기존 잠금과의 차이·함정)
+  - [docs/tech-share/index.html](docs/tech-share/index.html) — 3-way 트레이드오프 + 커넥션 병목 종합본
 - 설계 스펙: [docs/superpowers/specs/](docs/superpowers/specs/)
 - 구현 계획: [docs/superpowers/plans/](docs/superpowers/plans/)
 - **벤치마크 결과·분석**: [Phase 1](docs/results/2026-06-02-phase1-results.md) · [Phase 2](docs/results/2026-06-04-phase2-results.md)

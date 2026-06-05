@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FOR UPDATE SKIP LOCKED — 기다리지 말고 건너뛰어라 · Tech Share</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --ink:#e8edf7; --muted:#9aa7c2;
+    --line:#2a3450; --accent:#7aa2ff; --mysql:#5b8def; --redis:#ef5b6b; --split:#b07cff;
+    --ok:#3ec98a; --bad:#ff6b6b; --warn:#ffcf6b; --code:#0b0f18;
+    --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.7;font-size:18px}
+  a{color:var(--accent)}
+  code{font-family:var(--mono);background:#0b1120;padding:.1em .35em;border-radius:5px;font-size:.86em;color:#cfe0ff}
+  pre{font-family:var(--mono);background:var(--code);border:1px solid var(--line);border-radius:10px;
+      padding:16px 18px;overflow-x:auto;font-size:14.5px;line-height:1.6;color:#dbe6ff;margin:14px 0}
+  pre .kw{color:#7aa2ff;font-weight:600}.pre-c{color:#6b7aa0;font-style:italic}
+  .hl{color:#ffcf6b;font-weight:600}.r{color:var(--redis)}.g{color:var(--ok)}.b{color:var(--mysql)}.p{color:var(--split)}
+
+  nav{position:sticky;top:0;z-index:50;background:rgba(15,20,32,.92);backdrop-filter:blur(8px);
+      border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  nav .brand{font-weight:700;margin-right:10px;font-size:15px;color:var(--muted);letter-spacing:.3px}
+  nav a{display:inline-block;padding:5px 11px;border-radius:999px;font-size:13.5px;text-decoration:none;
+        color:var(--muted);border:1px solid transparent;transition:.15s}
+  nav a:hover{color:var(--ink);background:var(--panel2)}
+  nav a.active{color:#fff;background:var(--accent);border-color:var(--accent)}
+
+  main{max-width:980px;margin:0 auto;padding:0 22px}
+  section{padding:54px 0 40px;border-bottom:1px solid var(--line);scroll-margin-top:64px}
+  section:last-child{border-bottom:none}
+  .tag{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+       text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px}
+  .tag .num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;
+            background:var(--accent);color:#fff;font-weight:700;font-size:13px}
+  .tag .time{margin-left:6px;padding:2px 9px;border:1px solid var(--line);border-radius:999px;font-size:11.5px}
+  h1{font-size:42px;line-height:1.18;margin:.1em 0 .3em}
+  h2{font-size:30px;margin:.1em 0 .35em;letter-spacing:-.01em}
+  h3{font-size:20px;margin:1.4em 0 .4em;color:#cdd8f2}
+  .lead{font-size:20px;color:var(--muted);max-width:78ch}
+  p{max-width:80ch}
+  .hero{padding-top:70px}
+  .hero .sub{font-size:18px;color:var(--muted);margin-top:18px}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+        padding:4px 13px;font-size:13.5px;color:var(--muted);margin:4px 6px 4px 0}
+
+  .grid{display:grid;gap:16px}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:820px){.cols-3,.cols-2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card h4{margin:0 0 6px;font-size:17px}
+  .card.mysql{border-top:3px solid var(--mysql)} .card.redis{border-top:3px solid var(--redis)}
+  .card.split{border-top:3px solid var(--split)}
+  .muted{color:var(--muted)} .small{font-size:14.5px}
+  .callout{background:var(--panel2);border-left:4px solid var(--accent);border-radius:0 10px 10px 0;
+           padding:14px 18px;margin:18px 0}
+  .callout.bad{border-color:var(--bad)} .callout.ok{border-color:var(--ok)} .callout.warn{border-color:var(--warn)}
+  blockquote{margin:18px 0;padding:14px 20px;border-left:4px solid var(--muted);background:var(--panel);
+             border-radius:0 10px 10px 0;font-style:italic;color:#cdd8f2}
+
+  table{border-collapse:collapse;width:100%;margin:16px 0;font-size:14.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:center}
+  th{background:var(--panel2);color:#cdd8f2;font-weight:600}
+  td.l,th.l{text-align:left}
+  .cell-bad{background:rgba(255,107,107,.16);color:#ff9b9b;font-weight:700}
+  .cell-ok{color:var(--ok);font-weight:600}
+
+  .kpi{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0}
+  .kpi .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 20px;min-width:150px}
+  .kpi .v{font-size:30px;font-weight:800;letter-spacing:-.02em}
+  .kpi .k{font-size:13px;color:var(--muted);margin-top:2px}
+
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin:18px 0}
+  .diagram svg{display:block;width:100%;height:auto}
+  .legend{font-size:13px;color:var(--muted);margin-top:8px}
+  .mini{background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:8px;margin:8px 0}
+  .mini svg{display:block;width:100%;height:auto}
+  .foot{padding:40px 0 80px;color:var(--muted);font-size:14px}
+  .hintbar{position:fixed;bottom:14px;right:16px;font-size:12px;color:var(--muted);
+           background:rgba(23,30,46,.9);border:1px solid var(--line);border-radius:999px;padding:6px 12px;z-index:60}
+  .skip{display:inline-block;font-size:12px;color:var(--warn);border:1px dashed var(--warn);
+        border-radius:999px;padding:2px 10px;margin-left:8px;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+  <span class="brand">SKIP LOCKED</span>
+  <a href="#s0">문제</a>
+  <a href="#s1">8.0 이전</a>
+  <a href="#s2">세 잠금</a>
+  <a href="#s3">의미론</a>
+  <a href="#s4">사례</a>
+  <a href="#s5">함정</a>
+  <a href="#s6">정리</a>
+</nav>
+
+<main>
+
+<!-- 0. HERO / 문제 -->
+<section id="s0" class="hero">
+  <div class="tag"><span class="num">0</span> 문제 <span class="time">~1분</span></div>
+  <h1><code style="font-size:.62em">FOR UPDATE SKIP LOCKED</code><br>기다리지 말고, 건너뛰어라</h1>
+  <p class="lead">MySQL 8.0이 들여온 잠금 옵션 한 줄. <strong>왜 도입됐고, 기존 잠금과 무엇이 다른가</strong> — 그리고 그게
+  왜 "풀에서 하나 집기" 문제를 통째로 바꿨는가.</p>
+
+  <div style="margin-top:18px">
+    <span class="pill">MySQL 8.0.1+ (2017)</span>
+    <span class="pill">작업 큐 · 재고 예약 풀 · outbox</span>
+    <span class="pill">동시성 패턴</span>
+  </div>
+
+  <div class="callout" style="margin-top:26px">
+    <strong>오늘의 한 장면:</strong> 워커(혹은 결제 요청) 여러 개가 한 테이블에서
+    <strong>"아직 아무도 안 집은 행 하나"</strong>를 동시에 가져가야 한다 — 작업 큐, 재고 예약 풀, outbox 릴레이.
+    순진하게 <code>FOR UPDATE</code>로 짜면? <span class="r">전부 같은 행 앞에 줄을 선다.</span>
+  </div>
+</section>
+
+<!-- 1. 8.0 이전의 고통 -->
+<section id="s1">
+  <div class="tag"><span class="num">1</span> 배경 <span class="time">~3분</span></div>
+  <h2>8.0 이전엔, '하나 집기'가 왜 아팠나</h2>
+  <p>워커 N개가 동시에 "ready인 행 하나"를 잡으려 한다:</p>
+  <pre><span class="pre-c">-- 모든 워커가 똑같이 '가장 앞 행'을 노린다</span>
+<span class="kw">SELECT</span> id <span class="kw">FROM</span> jobs <span class="kw">WHERE</span> status='ready'
+<span class="kw">ORDER BY</span> id <span class="kw">LIMIT</span> 1 <span class="kw">FOR UPDATE</span>;   <span class="pre-c">-- 8.0 이전: 옵션 없음</span></pre>
+  <p>한 놈이 그 행을 잠그면, 나머지는 <span class="r">같은 행이 풀릴 때까지 <strong>대기</strong></span>한다
+  (최대 <code>innodb_lock_wait_timeout</code>, 기본 50초 → 에러 1205). 워커를 아무리 늘려도
+  <strong>유효 동시성은 사실상 1</strong>. 그래서 다들 우회했다 — 셋 다 나름의 대가가 있었다.</p>
+
+  <div class="grid cols-3">
+    <div class="card">
+      <h4>① status 컬럼 플립</h4>
+      <p class="small muted"><code>SELECT</code>로 ready 하나 찾고 → <code>UPDATE status='taken'</code>.
+      그 사이 <span class="r">다른 워커가 같은 행을 가로채</span> 이중 처리, 또는 트랜잭션으로 막으면 다시 경합.</p>
+    </div>
+    <div class="card">
+      <h4>② 어드바이저리 락 (GET_LOCK)</h4>
+      <p class="small muted">앱이 키를 정해 분산 잠금. <span class="r">키 설계 부담</span> + 커넥션에 묶임 + 자동 해제·세션 종료
+      함정. 결국 잠금 로직이 앱으로 샌다.</p>
+    </div>
+    <div class="card">
+      <h4>③ 외부 큐 (Redis/SQS)</h4>
+      <p class="small muted">잘 된다. 단 <span class="r">또 다른 시스템</span> — 운영·정합성·"진실이 두 곳"
+      문제를 새로 안는다. (Shopify가 겪던 바로 그 분리 구조.)</p>
+    </div>
+  </div>
+
+  <div class="callout bad">
+    <strong>공통 고통:</strong> 남이 잡은 행을 <strong>"기다리느라"</strong> 처리량이 안 나오거나, 안 기다리려고
+    <strong>앱·외부 시스템으로 우회</strong>하다 복잡도가 샌다.
+  </div>
+</section>
+
+<!-- 2. 세 잠금 동작 (척추) -->
+<section id="s2">
+  <div class="tag"><span class="num">2</span> 핵심 — 세 가지 잠금 동작 <span class="time">~5분</span></div>
+  <h2><code>FOR UPDATE</code> vs <code>NOWAIT</code> vs <code>SKIP LOCKED</code></h2>
+  <p class="muted">8.0.1부터 <code>FOR UPDATE</code>에 두 옵션이 붙었다. 핵심은 <strong>"잠긴 행을 만났을 때 무엇을 하느냐"</strong> 하나로 갈린다.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 312" role="img" aria-label="세 가지 잠금 동작 비교">
+      <defs>
+        <marker id="g" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3ec98a"/></marker>
+        <marker id="rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff6b6b"/></marker>
+        <marker id="y" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ffcf6b"/></marker>
+      </defs>
+      <text x="12" y="20" fill="#9aa7c2" font-size="12">5개 행 중 앞 2개는 다른 트랜잭션이 이미 잠금 🔒 — 내가 하나 집어야 한다</text>
+
+      <!-- Lane 1: FOR UPDATE -->
+      <text x="12" y="58" fill="#ffcf6b" font-size="13.5" font-weight="700">FOR UPDATE</text>
+      <text x="12" y="74" fill="#9aa7c2" font-size="10.5">(기본)</text>
+      <rect x="150" y="40" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="178" y="61" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="214" y="40" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="242" y="61" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="278" y="40" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <rect x="342" y="40" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <rect x="406" y="40" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <line x1="178" y1="92" x2="178" y2="72" stroke="#ffcf6b" stroke-width="2" marker-end="url(#y)"/>
+      <text x="190" y="90" fill="#ffcf6b" font-size="11">첫 행에 멈춰 ⏳ 대기</text>
+      <text x="478" y="60" fill="#ff9b9b" font-size="12">→ 풀릴 때까지 블로킹 (timeout 1205)</text>
+
+      <!-- Lane 2: NOWAIT -->
+      <text x="12" y="150" fill="#ff6b6b" font-size="13.5" font-weight="700">… NOWAIT</text>
+      <rect x="150" y="132" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="178" y="153" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="214" y="132" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="242" y="153" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="278" y="132" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <rect x="342" y="132" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <rect x="406" y="132" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <line x1="178" y1="184" x2="178" y2="164" stroke="#ff6b6b" stroke-width="2" marker-end="url(#rd)"/>
+      <text x="190" y="182" fill="#ff6b6b" font-size="11" font-weight="700">✗ 즉시 에러</text>
+      <text x="478" y="152" fill="#ff9b9b" font-size="12">→ 안 기다리고 바로 실패 (3572)</text>
+
+      <!-- Lane 3: SKIP LOCKED -->
+      <text x="12" y="242" fill="#3ec98a" font-size="13.5" font-weight="700">… SKIP LOCKED</text>
+      <rect x="150" y="224" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="178" y="245" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="214" y="224" width="56" height="30" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="242" y="245" font-size="13" text-anchor="middle">🔒</text>
+      <rect x="278" y="224" width="56" height="30" rx="6" fill="#15241b" stroke="#3ec98a"/><text x="306" y="244" fill="#3ec98a" font-size="12" text-anchor="middle">✓</text>
+      <rect x="342" y="224" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <rect x="406" y="224" width="56" height="30" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      <path d="M170,284 Q238,300 300,256" fill="none" stroke="#3ec98a" stroke-width="2.2" marker-end="url(#g)"/>
+      <text x="150" y="300" fill="#3ec98a" font-size="11">잠긴 2개 건너뛰고 → 3번째 빈 행</text>
+      <text x="478" y="244" fill="#9ff0c4" font-size="12">→ 즉시 잠글 수 있는 행만 (비대기)</text>
+    </svg>
+    <div class="legend">셋의 차이는 <strong>"잠긴 행을 만났을 때"</strong> 하나: <span class="hl">대기 / 즉시 실패 / 건너뛰기</span>.</div>
+  </div>
+
+  <table style="max-width:760px">
+    <thead><tr><th class="l">옵션</th><th>잠긴 행을 만나면</th><th>실패 코드</th><th class="l">용도</th></tr></thead>
+    <tbody>
+      <tr><td class="l"><code>FOR UPDATE</code></td><td>풀릴 때까지 <span class="hl">대기</span></td><td>1205(timeout)</td><td class="l">반드시 그 행을 처리해야 할 때</td></tr>
+      <tr><td class="l"><code>… NOWAIT</code></td><td><span class="r">즉시 에러</span></td><td>3572</td><td class="l">대기 대신 빠르게 실패·재시도</td></tr>
+      <tr><td class="l"><code>… SKIP LOCKED</code></td><td><span class="g">건너뛰고 다음</span></td><td>—</td><td class="l">풀에서 <strong>아무거나 하나</strong> 집기</td></tr>
+    </tbody>
+  </table>
+
+  <pre><span class="pre-c">-- "지금 잠글 수 있는 행 하나만 즉시 가져온다" — 큐/풀의 정석</span>
+<span class="kw">SELECT</span> id <span class="kw">FROM</span> jobs <span class="kw">WHERE</span> status='ready'
+<span class="kw">ORDER BY</span> id <span class="kw">LIMIT</span> 1 <span class="hl">FOR UPDATE SKIP LOCKED</span>;</pre>
+</section>
+
+<!-- 3. 의미론 (공짜가 아니다) -->
+<section id="s3">
+  <div class="tag"><span class="num">3</span> 의미론 — 공짜가 아니다 <span class="time">~3분</span></div>
+  <h2>SKIP LOCKED는 '일관된 읽기'가 아니다</h2>
+  <p>건너뛴다는 건 곧 <strong>"다른 트랜잭션이 잠근 행을 결과에서 누락한다"</strong>는 뜻이다.
+  두 워커가 같은 쿼리를 동시에 돌리면 <span class="g">서로 겹치지 않는 행</span>을 받는다 — 그게 목적(작업 분배).
+  하지만 같은 이유로, "지금 ready인 행이 몇 개냐"를 <span class="r">정확히 셀 수는 없다</span>(잠긴 건 안 보이니까).</p>
+
+  <div class="grid cols-2">
+    <div class="card" style="border-top:3px solid var(--ok)">
+      <h4 class="g">✓ 잘 맞는 곳</h4>
+      <p class="small muted">작업 큐 워커 · 재고 <strong>예약 풀에서 하나 집기</strong> · outbox/이벤트 릴레이 ·
+      rate-limited claim — 공통점: <strong>"아무거나 잠글 수 있는 거 하나면 된다"</strong>.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--bad)">
+      <h4 class="r">✗ 쓰면 안 되는 곳</h4>
+      <p class="small muted">정확한 집계 · 잔액/재고 카운트 · 리포트 — <strong>일관 스냅샷</strong>이 필요한 읽기.
+      잠긴 행을 빼고 세므로 <span class="r">수가 틀린다.</span></p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>역사:</strong> <code>SKIP LOCKED</code>·<code>NOWAIT</code>는 <strong>MySQL 8.0.1(2017)</strong>에 추가됐다.
+    PostgreSQL은 9.5(2016), Oracle은 훨씬 전부터 있었다 — MySQL이 늦은 편이라, 그 전까지 다들 §1의 우회책을 썼던 것.
+  </div>
+  <div class="callout warn">
+    <strong>한 줄:</strong> 건너뛴다 = "본다"는 보장을 포기한다. <span class="hl">작업 분배엔 축복, 정확 집계엔 독.</span>
+  </div>
+</section>
+
+<!-- 4. 사례 -->
+<section id="s4">
+  <div class="tag"><span class="num">4</span> 사례 — Shopify, 그리고 우리 PoC <span class="time">~4분</span></div>
+  <h2>재고 예약을 'SKIP LOCKED 풀'로</h2>
+  <p>Shopify는 재고를 <code>quantity</code> 한 칸이 아니라 <strong>판매 단위마다 1행(one-row-per-unit)</strong>으로 펼치고,
+  예약을 <strong>"풀에서 행 하나 집기"</strong>로 바꿨다. 핫 아이템에 수백 명이 몰려도 <code>SKIP LOCKED</code>가
+  서로 <span class="g">다른 행</span>을 집게 해 <span class="hl">락 경합 자체를 없앤다.</span></p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 200" role="img" aria-label="one-row-per-unit + SKIP LOCKED 예약">
+      <defs><marker id="g2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3ec98a"/></marker>
+        <marker id="r2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff6b6b"/></marker></defs>
+      <line x1="352" y1="14" x2="352" y2="186" stroke="#2a3450" stroke-dasharray="4 4"/>
+
+      <!-- AS-IS -->
+      <text x="20" y="30" fill="#ff9b9b" font-size="13" font-weight="700">qty 한 칸 — 한 행에 몰림</text>
+      <text x="40" y="64" fill="#cdd8f2" font-size="11">200 요청</text>
+      <line x1="96" y1="58" x2="150" y2="92" stroke="#ff6b6b" stroke-width="1.5" marker-end="url(#r2)"/>
+      <line x1="120" y1="56" x2="156" y2="92" stroke="#ff6b6b" stroke-width="1.5" marker-end="url(#r2)"/>
+      <line x1="150" y1="54" x2="162" y2="92" stroke="#ff6b6b" stroke-width="1.5" marker-end="url(#r2)"/>
+      <rect x="128" y="94" width="80" height="34" rx="7" fill="#221a22" stroke="#ef5b6b"/>
+      <text x="168" y="116" fill="#ef5b6b" font-size="12" text-anchor="middle">qty=10</text>
+      <text x="168" y="152" fill="#ff9b9b" font-size="11" text-anchor="middle">한 행 = 직렬화 (대기)</text>
+
+      <!-- TO-BE -->
+      <text x="392" y="30" fill="#3ec98a" font-size="13" font-weight="700">단위당 1행 + SKIP LOCKED</text>
+      <g>
+        <rect x="392" y="94" width="34" height="34" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="409" y="116" font-size="12" text-anchor="middle">🔒</text>
+        <rect x="432" y="94" width="34" height="34" rx="6" fill="#2a1f24" stroke="#ef5b6b"/><text x="449" y="116" font-size="12" text-anchor="middle">🔒</text>
+        <rect x="472" y="94" width="34" height="34" rx="6" fill="#15241b" stroke="#3ec98a"/>
+        <rect x="512" y="94" width="34" height="34" rx="6" fill="#15241b" stroke="#3ec98a"/>
+        <rect x="552" y="94" width="34" height="34" rx="6" fill="#15241b" stroke="#3ec98a"/>
+        <rect x="592" y="94" width="34" height="34" rx="6" fill="#1a2030" stroke="#2a3450"/>
+        <rect x="632" y="94" width="34" height="34" rx="6" fill="#1a2030" stroke="#2a3450"/>
+      </g>
+      <line x1="489" y1="66" x2="489" y2="92" stroke="#3ec98a" stroke-width="1.5" marker-end="url(#g2)"/>
+      <line x1="529" y1="66" x2="529" y2="92" stroke="#3ec98a" stroke-width="1.5" marker-end="url(#g2)"/>
+      <line x1="569" y1="66" x2="569" y2="92" stroke="#3ec98a" stroke-width="1.5" marker-end="url(#g2)"/>
+      <text x="510" y="60" fill="#cdd8f2" font-size="11" text-anchor="middle">서로 다른 행을 동시에</text>
+      <text x="520" y="152" fill="#3ec98a" font-size="11" text-anchor="middle">잠긴 행 건너뛰고 빈 행 = 병렬</text>
+    </svg>
+    <div class="legend">"하나의 핫 행"을 "N개 단위 행"으로 펼치고, 잠긴 건 <code>SKIP LOCKED</code>로 건너뛰니 동시 예약이 충돌하지 않는다.</div>
+  </div>
+
+  <h3>우리 PoC로 직접 확인</h3>
+  <p class="muted small">1개 핫 아이템(HOT_SINGLE)에 clients=200을 몰아넣고 <code>mysql-skip-locked</code> 전략으로 실측:</p>
+  <div class="kpi">
+    <div class="box"><div class="v g">0</div><div class="k">oversell (정합성 깨짐)</div></div>
+    <div class="box"><div class="v" style="color:var(--ok)">true</div><div class="k">conserved (재고 보존)</div></div>
+    <div class="box"><div class="v b">2,194</div><div class="k">req/s (대기 없이 완주)</div></div>
+  </div>
+  <p class="small muted">핫 아이템 한 곳에 200명이 동시에 몰려도 <strong>초과 판매 0</strong> — 행 하나씩 집어가니 서로 밟지 않는다.
+  <em>(Redis와의 처리량 비교·커넥션 병목 등은 이 발표 범위 밖. 레포의 3-way 결과 문서 참고.)</em></p>
+</section>
+
+<!-- 5. 함정 -->
+<section id="s5">
+  <div class="tag"><span class="num">5</span> 함정 — 잠금 고민의 끝이 아니다 <span class="time">~3분</span></div>
+  <h2>SKIP LOCKED 위에서 gap lock이 다시 문다</h2>
+  <p>풀이 마르면 원장에서 행을 <strong>보충(replenishment) INSERT</strong>한다. 그런데 풀이 <strong>비어 있을 때</strong>
+  SKIP LOCKED 스캔이 빈 인덱스 범위 끝(supremum)까지 가면 <span class="hl">gap lock</span>을 잡고,
+  <strong>REPEATABLE READ</strong>에선 두 트랜잭션의 gap lock + insert-intention이 <span class="r">순환 대기 → 데드락</span>이 된다.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 720 200" role="img" aria-label="gap-lock 순환 대기">
+      <rect x="40" y="40" width="250" height="120" rx="12" fill="#1e2740" stroke="#2a3450"/>
+      <rect x="430" y="40" width="250" height="120" rx="12" fill="#1e2740" stroke="#2a3450"/>
+      <text x="165" y="68" fill="#5b8def" font-size="15" text-anchor="middle" font-weight="700">Tx A</text>
+      <text x="555" y="68" fill="#ef5b6b" font-size="15" text-anchor="middle" font-weight="700">Tx B</text>
+      <text x="165" y="98" fill="#cdd8f2" font-size="12.5" text-anchor="middle">supremum gap lock 보유(공유)</text>
+      <text x="555" y="98" fill="#cdd8f2" font-size="12.5" text-anchor="middle">supremum gap lock 보유(공유)</text>
+      <text x="165" y="132" fill="#ffcf6b" font-size="12.5" text-anchor="middle">INSERT 하려면 B의 락 해제 대기</text>
+      <text x="555" y="132" fill="#ffcf6b" font-size="12.5" text-anchor="middle">INSERT 하려면 A의 락 해제 대기</text>
+      <path d="M295 110 H425" stroke="#ff6b6b" stroke-width="2.5" fill="none" marker-end="url(#ar)"/>
+      <path d="M425 150 H295" stroke="#ff6b6b" stroke-width="2.5" fill="none" marker-end="url(#ar)" transform="translate(0,8)"/>
+      <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 Z" fill="#ff6b6b"/></marker></defs>
+      <text x="360" y="186" fill="#ff9b9b" font-size="12" text-anchor="middle">순환 대기 → InnoDB가 한쪽을 데드락(1213)으로 강제 종료</text>
+    </svg>
+    <div class="legend"><strong>READ COMMITTED는 gap lock을 안 잡아</strong> 두 INSERT가 모두 통과한다 — Shopify가 기본 격리수준을 RR→RC로 바꾼 이유.</div>
+  </div>
+
+  <table style="max-width:680px">
+    <thead><tr><th>isolation</th><th>deadlocks(1213)</th><th>성공</th><th class="l">비고</th></tr></thead>
+    <tbody>
+      <tr><td class="l">REPEATABLE READ</td><td class="cell-bad">20 / 20</td><td>20</td><td class="l">매 라운드 데드락</td></tr>
+      <tr><td class="l">READ COMMITTED</td><td class="cell-ok">0</td><td>40</td><td class="l">깨끗</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">우리 PoC 실측(빈 테이블 + 배리어 동기화 최소 데모). <strong>정직한 단서:</strong> 정작 <em>자연스러운</em>
+  reserve+보충 경로에선 데드락이 잘 안 났다 — SKIP LOCKED가 빈 행을 일찍 만나 supremum까지 안 가기 때문.
+  bounded pool이 역설적으로 gap 스캔을 회피한 것. 그래서 메커니즘은 최소 데모로 결정적으로 입증했다.</p>
+
+  <div class="callout warn">
+    <strong>교훈:</strong> <code>SKIP LOCKED</code>는 "대기"를 없애주지만, <strong>격리수준·gap lock과의 상호작용</strong>까지
+    없애주진 않는다. 잠금은 <span class="hl">항상 격리수준과 함께</span> 봐야 한다.
+  </div>
+</section>
+
+<!-- 6. 정리 -->
+<section id="s6">
+  <div class="tag"><span class="num">6</span> 정리 <span class="time">~1분</span></div>
+  <h2>가져갈 것 세 가지</h2>
+  <div class="grid cols-3">
+    <div class="card" style="border-top:3px solid var(--ok)">
+      <h4>① 기다리지 말고 건너뛰어라</h4>
+      <p class="small muted">"풀에서 하나 집기"는 <code>SKIP LOCKED</code>가 정답. status 플립·advisory·외부 큐 같은
+      8.0 이전 우회책을 <strong>DB 한 줄로</strong> 대체한다.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--warn)">
+      <h4>② 단, 일관 읽기가 아니다</h4>
+      <p class="small muted">잠긴 행을 <strong>누락</strong>한다. 작업 분배엔 축복, 정확 집계엔 독 —
+      쓰기 전에 "이건 분배인가 집계인가"를 먼저 묻자.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--accent)">
+      <h4>③ 잠금은 격리수준과 함께</h4>
+      <p class="small muted">SKIP LOCKED 위에서도 gap lock·RR/RC가 다시 문다. 우리 실측 <strong>RR 20 vs RC 0</strong> —
+      옵션 하나로 끝나는 게 아니다.</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:24px">
+    <strong>레포:</strong> <a href="https://github.com/daewook-shin/inventory-reservation-poc" target="_blank" rel="noopener">github.com/daewook-shin/inventory-reservation-poc</a>
+    · 영감: <a href="https://shopify.engineering/scaling-inventory-reservations" target="_blank" rel="noopener">Shopify — Scaling Inventory Reservations</a>
+  </div>
+  <p class="muted" style="margin-top:16px">질문 환영합니다. 🙇</p>
+</section>
+
+<div class="foot">FOR UPDATE SKIP LOCKED · Tech Share · 수치는 로컬 PoC 실측값</div>
+</main>
+
+<div class="hintbar">← → 섹션 이동 · F11 풀스크린</div>
+
+<script>
+(function(){
+  "use strict";
+  var sections = Array.prototype.slice.call(document.querySelectorAll('section'));
+  var navlinks = Array.prototype.slice.call(document.querySelectorAll('#nav a'));
+
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        var id = e.target.id;
+        navlinks.forEach(function(a){ a.classList.toggle('active', a.getAttribute('href') === '#'+id); });
+      }
+    });
+  }, {rootMargin:'-45% 0px -45% 0px'});
+  sections.forEach(function(s){ io.observe(s); });
+
+  function curIndex(){
+    var y = window.scrollY + window.innerHeight*0.35, best=0;
+    sections.forEach(function(s,i){ if(s.offsetTop <= y) best=i; });
+    return best;
+  }
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'ArrowRight' || ev.key === 'PageDown'){
+      var n = Math.min(sections.length-1, curIndex()+1); sections[n].scrollIntoView(); ev.preventDefault();
+    } else if(ev.key === 'ArrowLeft' || ev.key === 'PageUp'){
+      var p = Math.max(0, curIndex()-1); sections[p].scrollIntoView(); ev.preventDefault();
+    }
+  });
+})();
+</script>
+</body>
+</html>
