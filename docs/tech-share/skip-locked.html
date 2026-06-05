@@ -107,7 +107,7 @@
   <div class="tag"><span class="num">0</span> 문제 <span class="time">~1분</span></div>
   <h1><code style="font-size:.62em">FOR UPDATE SKIP LOCKED</code><br>기다리지 말고, 건너뛰어라</h1>
   <p class="lead">MySQL 8.0이 들여온 잠금 옵션 한 줄. <strong>왜 도입됐고, 기존 잠금과 무엇이 다른가</strong> — 그리고 그게
-  왜 "풀에서 하나 집기" 문제를 통째로 바꿨는가.</p>
+  왜 "풀에서 하나 선점하기" 문제를 통째로 바꿨는가.</p>
 
   <div style="margin-top:18px">
     <span class="pill">MySQL 8.0.1+ (2017)</span>
@@ -117,7 +117,7 @@
 
   <div class="callout" style="margin-top:26px">
     <strong>오늘의 한 장면:</strong> 워커(혹은 결제 요청) 여러 개가 한 테이블에서
-    <strong>"아직 아무도 안 집은 행 하나"</strong>를 동시에 가져가야 한다 — 작업 큐, 재고 예약 풀, outbox 릴레이.
+    <strong>"아직 아무도 선점하지 않은 행 하나"</strong>를 동시에 가져가야 한다 — 작업 큐, 재고 예약 풀, outbox 릴레이.
     순진하게 <code>FOR UPDATE</code>로 짜면? <span class="r">전부 같은 행 앞에 줄을 선다.</span>
   </div>
 </section>
@@ -125,8 +125,8 @@
 <!-- 1. 8.0 이전의 고통 -->
 <section id="s1">
   <div class="tag"><span class="num">1</span> 배경 <span class="time">~3분</span></div>
-  <h2>8.0 이전엔, '하나 집기'가 왜 아팠나</h2>
-  <p>워커 N개가 동시에 "ready인 행 하나"를 잡으려 한다:</p>
+  <h2>8.0 이전엔, '하나 선점'이 왜 아팠나</h2>
+  <p>워커 N개가 동시에 "ready인 행 하나"를 선점하려 한다:</p>
   <pre><span class="pre-c">-- 모든 워커가 똑같이 '가장 앞 행'을 노린다</span>
 <span class="kw">SELECT</span> id <span class="kw">FROM</span> jobs <span class="kw">WHERE</span> status='ready'
 <span class="kw">ORDER BY</span> id <span class="kw">LIMIT</span> 1 <span class="kw">FOR UPDATE</span>;   <span class="pre-c">-- 8.0 이전: 옵션 없음</span></pre>
@@ -171,7 +171,7 @@
         <marker id="rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ff6b6b"/></marker>
         <marker id="y" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#ffcf6b"/></marker>
       </defs>
-      <text x="12" y="20" fill="#9aa7c2" font-size="12">5개 행 중 앞 2개는 다른 트랜잭션이 이미 잠금 🔒 — 내가 하나 집어야 한다</text>
+      <text x="12" y="20" fill="#9aa7c2" font-size="12">5개 행 중 앞 2개는 다른 트랜잭션이 이미 잠금 🔒 — 내가 하나 선점해야 한다</text>
 
       <!-- Lane 1: FOR UPDATE -->
       <text x="12" y="58" fill="#ffcf6b" font-size="13.5" font-weight="700">FOR UPDATE</text>
@@ -215,7 +215,7 @@
     <tbody>
       <tr><td class="l"><code>FOR UPDATE</code></td><td>풀릴 때까지 <span class="hl">대기</span></td><td>1205(timeout)</td><td class="l">반드시 그 행을 처리해야 할 때</td></tr>
       <tr><td class="l"><code>… NOWAIT</code></td><td><span class="r">즉시 에러</span></td><td>3572</td><td class="l">대기 대신 빠르게 실패·재시도</td></tr>
-      <tr><td class="l"><code>… SKIP LOCKED</code></td><td><span class="g">건너뛰고 다음</span></td><td>—</td><td class="l">풀에서 <strong>아무거나 하나</strong> 집기</td></tr>
+      <tr><td class="l"><code>… SKIP LOCKED</code></td><td><span class="g">건너뛰고 다음</span></td><td>—</td><td class="l">풀에서 <strong>아무거나 하나</strong> 선점</td></tr>
     </tbody>
   </table>
 
@@ -235,7 +235,7 @@
   <div class="grid cols-2">
     <div class="card" style="border-top:3px solid var(--ok)">
       <h4 class="g">✓ 잘 맞는 곳</h4>
-      <p class="small muted">작업 큐 워커 · 재고 <strong>예약 풀에서 하나 집기</strong> · outbox/이벤트 릴레이 ·
+      <p class="small muted">작업 큐 워커 · 재고 <strong>예약 풀에서 하나 선점</strong> · outbox/이벤트 릴레이 ·
       rate-limited claim — 공통점: <strong>"아무거나 잠글 수 있는 거 하나면 된다"</strong>.</p>
     </div>
     <div class="card" style="border-top:3px solid var(--bad)">
@@ -247,9 +247,9 @@
 
   <div class="callout">
     <strong>"재고 예약에 썼는데 왜 ✗?" —</strong> 모순이 아니다. 갈림은 <strong>도메인이 아니라 동작</strong>이다.
-    SKIP LOCKED로 한 건 <span class="g">"빈 단위 하나 집기(claim)"</span> — 잠긴 행은 건너뛰고 안 잠긴 행 하나를 가져오는 <strong>할당</strong>이다.
+    SKIP LOCKED로 한 건 <span class="g">"빈 단위 하나 선점(claim)"</span> — 잠긴 행은 건너뛰고 안 잠긴 행 하나를 가져오는 <strong>할당</strong>이다.
     반대로 <span class="r">"남은 수량을 정확히 세기(count)"</span>에 쓰면 진행 중인 예약이 잠근 행이 빠져 수가 틀린다.
-    같은 재고 도메인이라도 <strong>집기엔 ✓, 세기엔 ✗</strong>.
+    같은 재고 도메인이라도 <strong>선점엔 ✓, 세기엔 ✗</strong>.
   </div>
 
   <div class="callout">
@@ -266,7 +266,7 @@
   <div class="tag"><span class="num">4</span> 사례 — Shopify, 그리고 우리 PoC <span class="time">~4분</span></div>
   <h2>재고 예약을 'SKIP LOCKED 풀'로</h2>
   <p>Shopify는 재고를 <code>quantity</code> 한 칸이 아니라 <strong>판매 단위마다 1행(one-row-per-unit)</strong>으로 펼치고,
-  예약을 <strong>"풀에서 행 하나 집기"</strong>로 바꿨다. 핫 아이템에 수백 명이 몰려도 <code>SKIP LOCKED</code>가
+  예약을 <strong>"풀에서 행 하나 선점"</strong>으로 바꿨다. 핫 아이템에 수백 명이 몰려도 <code>SKIP LOCKED</code>가
   서로 <span class="g">다른 행</span>을 집게 해 <span class="hl">락 경합 자체를 없앤다.</span></p>
 
   <div class="diagram">
@@ -312,7 +312,7 @@
     <div class="box"><div class="v" style="color:var(--ok)">true</div><div class="k">conserved (재고 보존)</div></div>
     <div class="box"><div class="v b">2,194</div><div class="k">req/s (대기 없이 완주)</div></div>
   </div>
-  <p class="small muted">핫 아이템 한 곳에 200명이 동시에 몰려도 <strong>초과 판매 0</strong> — 행 하나씩 집어가니 서로 밟지 않는다.
+  <p class="small muted">핫 아이템 한 곳에 200명이 동시에 몰려도 <strong>초과 판매 0</strong> — 행 하나씩 선점하니 서로 충돌하지 않는다.
   <em>(Redis와의 처리량 비교·커넥션 병목 등은 이 발표 범위 밖. 레포의 3-way 결과 문서 참고.)</em></p>
 </section>
 
@@ -355,8 +355,8 @@
     </tbody>
   </table>
   <p class="small muted">우리 PoC 실측 — <strong>빈 테이블 + plain <code>FOR UPDATE</code>로 전 범위 스캔을 강제</strong>하고 배리어로 두 트랜잭션을 맞붙인 최소 데모.
-  <strong>정직한 반전:</strong> 정작 <em>SKIP LOCKED를 쓴 자연 경로</em>에선 데드락이 잘 안 났다 — SKIP LOCKED가 빈 행을 일찍 잡고 멈춰 supremum까지 안 가기 때문.
-  즉 <span class="g">SKIP LOCKED는 이 함정을 오히려 완화</span>하지만, 격리수준이 RR이면 빈 범위 INSERT에서 여전히 물릴 수 있어 <strong>격리수준을 함께</strong> 봐야 한다는 게 요점.</p>
+  <strong>정직한 반전:</strong> 정작 <em>SKIP LOCKED를 쓴 자연 경로</em>에선 데드락이 잘 안 났다 — SKIP LOCKED가 빈 행을 일찍 선점하고 멈춰 supremum까지 안 가기 때문.
+  즉 <span class="g">SKIP LOCKED는 이 함정을 오히려 완화</span>하지만, 격리수준이 RR이면 빈 범위 INSERT에서 여전히 걸릴 수 있어 <strong>격리수준을 함께</strong> 봐야 한다는 게 요점.</p>
 
   <div class="callout warn">
     <strong>교훈:</strong> <code>SKIP LOCKED</code>는 "대기"를 없애주지만, <strong>격리수준·gap lock과의 상호작용</strong>까지
@@ -381,7 +381,7 @@
     </div>
     <div class="card" style="border-top:3px solid var(--accent)">
       <h4>③ 잠금은 격리수준과 함께</h4>
-      <p class="small muted">SKIP LOCKED 위에서도 gap lock·RR/RC가 다시 문다. 우리 실측 <strong>RR 20 vs RC 0</strong> —
+      <p class="small muted">SKIP LOCKED 위에서도 gap lock·RR/RC가 다시 발목을 잡는다. 우리 실측 <strong>RR 20 vs RC 0</strong> —
       옵션 하나로 끝나는 게 아니다.</p>
     </div>
   </div>
