@@ -240,9 +240,16 @@
     </div>
     <div class="card" style="border-top:3px solid var(--bad)">
       <h4 class="r">✗ 쓰면 안 되는 곳</h4>
-      <p class="small muted">정확한 집계 · 잔액/재고 카운트 · 리포트 — <strong>일관 스냅샷</strong>이 필요한 읽기.
+      <p class="small muted">정확한 집계 · 잔액 · <strong>남은 수량 정확히 세기</strong> · 리포트 — <strong>일관 스냅샷</strong>이 필요한 읽기.
       잠긴 행을 빼고 세므로 <span class="r">수가 틀린다.</span></p>
     </div>
+  </div>
+
+  <div class="callout">
+    <strong>"재고 예약에 썼는데 왜 ✗?" —</strong> 모순이 아니다. 갈림은 <strong>도메인이 아니라 동작</strong>이다.
+    SKIP LOCKED로 한 건 <span class="g">"빈 단위 하나 집기(claim)"</span> — 잠긴 행은 건너뛰고 안 잠긴 행 하나를 가져오는 <strong>할당</strong>이다.
+    반대로 <span class="r">"남은 수량을 정확히 세기(count)"</span>에 쓰면 진행 중인 예약이 잠근 행이 빠져 수가 틀린다.
+    같은 재고 도메인이라도 <strong>집기엔 ✓, 세기엔 ✗</strong>.
   </div>
 
   <div class="callout">
