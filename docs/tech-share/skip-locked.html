@@ -312,10 +312,14 @@
 <!-- 5. 함정 -->
 <section id="s5">
   <div class="tag"><span class="num">5</span> 함정 — 잠금 고민의 끝이 아니다 <span class="time">~3분</span></div>
-  <h2>SKIP LOCKED 위에서 gap lock이 다시 문다</h2>
-  <p>풀이 마르면 원장에서 행을 <strong>보충(replenishment) INSERT</strong>한다. 그런데 풀이 <strong>비어 있을 때</strong>
-  SKIP LOCKED 스캔이 빈 인덱스 범위 끝(supremum)까지 가면 <span class="hl">gap lock</span>을 잡고,
-  <strong>REPEATABLE READ</strong>에선 두 트랜잭션의 gap lock + insert-intention이 <span class="r">순환 대기 → 데드락</span>이 된다.</p>
+  <h2>SKIP LOCKED를 써도 gap lock·격리수준은 남는다</h2>
+  <p>SKIP LOCKED는 잠긴 <em>레코드</em>를 건너뛸 뿐, 그 아래 InnoDB의 <span class="hl">gap lock</span>과 격리수준 규칙까지 없애주진 않는다.
+  잠금-읽기(<code>FOR UPDATE</code>)가 <strong>비어 있거나 소진된 인덱스 범위</strong>를 스캔하면 끝(supremum 의사 레코드)까지 가며 gap lock을 잡고,
+  그 빈 범위에 <strong>INSERT</strong>가 겹치면 — <strong>REPEATABLE READ</strong>에선 두 트랜잭션의 gap lock + insert-intention이
+  <span class="r">순환 대기 → 데드락</span>이 된다.</p>
+  <p class="small muted"><strong>이게 실제로 어디서 터지나:</strong> 재고 예약은 전 재고를 행으로 만들지 않고
+  <strong>일부만(예: 1,000행) '풀'로 두고 모자라면 원장에서 행을 채워 넣는다(replenishment INSERT)</strong>.
+  그 풀이 비어 보충 INSERT가 도는 순간이 바로 위 상황 — "빈 범위 + INSERT"다.</p>
 
   <div class="diagram">
     <svg viewBox="0 0 720 200" role="img" aria-label="gap-lock 순환 대기">
@@ -343,9 +347,9 @@
       <tr><td class="l">READ COMMITTED</td><td class="cell-ok">0</td><td>40</td><td class="l">깨끗</td></tr>
     </tbody>
   </table>
-  <p class="small muted">우리 PoC 실측(빈 테이블 + 배리어 동기화 최소 데모). <strong>정직한 단서:</strong> 정작 <em>자연스러운</em>
-  reserve+보충 경로에선 데드락이 잘 안 났다 — SKIP LOCKED가 빈 행을 일찍 만나 supremum까지 안 가기 때문.
-  bounded pool이 역설적으로 gap 스캔을 회피한 것. 그래서 메커니즘은 최소 데모로 결정적으로 입증했다.</p>
+  <p class="small muted">우리 PoC 실측 — <strong>빈 테이블 + plain <code>FOR UPDATE</code>로 전 범위 스캔을 강제</strong>하고 배리어로 두 트랜잭션을 맞붙인 최소 데모.
+  <strong>정직한 반전:</strong> 정작 <em>SKIP LOCKED를 쓴 자연 경로</em>에선 데드락이 잘 안 났다 — SKIP LOCKED가 빈 행을 일찍 잡고 멈춰 supremum까지 안 가기 때문.
+  즉 <span class="g">SKIP LOCKED는 이 함정을 오히려 완화</span>하지만, 격리수준이 RR이면 빈 범위 INSERT에서 여전히 물릴 수 있어 <strong>격리수준을 함께</strong> 봐야 한다는 게 요점.</p>
 
   <div class="callout warn">
     <strong>교훈:</strong> <code>SKIP LOCKED</code>는 "대기"를 없애주지만, <strong>격리수준·gap lock과의 상호작용</strong>까지
